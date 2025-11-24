@@ -4,3 +4,9 @@ venv/
 # Python cache files
 __pycache__/
 *.py[cod]
+
+# environment variables
+.env
+
+# wandb files
+wandb/

@@ -149,6 +149,8 @@ class BlindDeconvolver(nn.Module):
         self,
         y_meas: torch.Tensor,
         verbose: bool = True,
+        log_fn: Optional[Callable[[dict, int], None]] = None,
+        log_every: int = 10,
     ) -> Tuple[torch.Tensor, torch.Tensor, List[float]]:
         """
         Run blind deconvolution to estimate x and k from y_meas.
@@ -156,6 +158,8 @@ class BlindDeconvolver(nn.Module):
         Args:
             y_meas: Observed blurred image, shape (1, 1, H, W).
             verbose: If True, prints loss every 50 iterations.
+            log_fn: Optional callback receiving (metrics_dict, step). Used for logging.
+            log_every: Log every N iterations when log_fn is provided.
 
         Returns:
             x_hat: Estimated sharp image, shape (1, 1, H, W).
@@ -208,6 +212,10 @@ class BlindDeconvolver(nn.Module):
 
             loss_value = float(loss.detach().cpu().item())
             losses.append(loss_value)
+
+            if log_fn is not None and log_every > 0:
+                if (it % log_every == 0) or (it == self.config.num_iters - 1):
+                    log_fn({"loss": loss_value}, it)
 
             if verbose:
                 iterator.set_postfix({"loss": f"{loss_value:.6f}"})
