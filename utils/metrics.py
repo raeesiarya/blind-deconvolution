@@ -50,3 +50,15 @@ def ssim(x_hat: torch.Tensor, x_true: torch.Tensor, data_range: float = 1.0) -> 
         win_size=11  # classical SSIM window
     )
     return float(score)
+
+def kernel_error(k_hat: torch.Tensor, k_true: torch.Tensor) -> float:
+    """Compute relative error between estimated and true kernels.
+
+    Args:
+        k_hat (torch.Tensor): Estimated kernel tensor.
+        k_true (torch.Tensor): Ground-truth kernel tensor.
+    Returns:
+        float: Relative error between k_hat and k_true.
+    """
+    diff = k_hat - k_true
+    return float(torch.norm(diff) / (torch.norm(k_true) + 1e-8))
