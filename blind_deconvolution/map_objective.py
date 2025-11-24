@@ -37,7 +37,7 @@ from typing import Callable, Optional
 
 import torch
 
-from forward_model import forward_model
+from blind_deconvolution.forward_model import forward_model
 
 
 ##############################

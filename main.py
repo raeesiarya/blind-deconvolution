@@ -1,28 +1,51 @@
-import numpy as np
-from skimage import io
-
-from psf_generator import gaussian_psf
-from utils.convertors import numpy_image_to_tensor, numpy_kernel_to_tensor
-from forward_model import forward_model
+from blind_deconvolution.blind_deconvolution import BlindDeconvolver, BlindDeconvConfig
+from utils.image_io import load_image
+from utils.image_paths import list_image_paths
+import torch
+from blind_deconvolution.psf_generator import gaussian_psf
+from blind_deconvolution.forward_model import forward_model
+from utils.convertors import numpy_kernel_to_tensor
 
 def main():
-    x_np = io.imread("images/synthetic/checkerboard.png")  # adjust path
-    if x_np.ndim == 3:
-        # if saved as RGB, convert to grayscale via mean
-        x_np = x_np.mean(axis=-1)
-    x_np = x_np.astype(np.float32) / 255.0  # scale to [0,1]
+    device = "cpu"
+    image_paths = list_image_paths()
 
-    # 2. Make a Gaussian PSF in numpy
-    k_np = gaussian_psf(size=21, sigma=3.0)
+    if not image_paths:
+        print("No images found in images directory.")
+        return
 
-    # 3. Convert to torch
-    x = numpy_image_to_tensor(x_np)
-    k = numpy_kernel_to_tensor(k_np)
+    for img_path in image_paths:
+        print(f"\n=== Processing {img_path} ===")
 
-    # 4. Run forward model
-    y = forward_model(x, k, noise_sigma=0.01)
+        # Load clean image x_true
+        x_true = load_image(img_path, mode="torch", grayscale=True, normalize=True).to(device)
 
-    print(x.shape, k.shape, y.shape)
-    
+        # Generate ground-truth PSF (Gaussian)
+        k_np = gaussian_psf(size=15, sigma=2.0)
+        k_true = numpy_kernel_to_tensor(k_np).to(device)
+
+        # Create blurred measurement
+        with torch.no_grad():
+            y_meas = forward_model(x_true, k_true, noise_sigma=0.01)
+
+        # Configure a lightweight run for quick testing
+        config = BlindDeconvConfig(
+            num_iters=100,
+            lr_x=1e-2,
+            lr_k=1e-2,
+            lambda_x=0.0,
+            lambda_k_l2=1e-3,
+            lambda_k_center=1e-3,
+            kernel_size=15,
+            device=device,
+        )
+
+        solver = BlindDeconvolver(config).to(device)
+        x_hat, k_hat, losses = solver.run(y_meas, verbose=True)
+
+        print(f"Finished. Final loss: {losses[-1]:.6f}")
+        print(f"x_hat shape: {tuple(x_hat.shape)}, k_hat shape: {tuple(k_hat.shape)}")
+
+
 if __name__ == "__main__":
     main()
