@@ -39,6 +39,7 @@ import torch
 
 from blind_deconvolution.forward_model import forward_model
 from blind_deconvolution.priors.pink_noise import pink_noise_loss
+from blind_deconvolution.priors.diffusion import diffusion_prior_loss
 
 
 ##############################
@@ -161,6 +162,7 @@ def map_objective(
     lambda_k_center: float = 0.0,
     image_prior_fn: Optional[Callable[[torch.Tensor], torch.Tensor]] = None,
     lambda_pink: float = 0.0,
+    lambda_diffusion: float = 0.0,
 ) -> torch.Tensor:
     """Full MAP objective for blind deconvolution.
 
@@ -191,8 +193,12 @@ def map_objective(
     loss_pink = x.new_tensor(0.0)
     if lambda_pink > 0.0:
         loss_pink = lambda_pink * pink_noise_loss(x)
+    
+    loss_diffusion = x.new_tensor(0.0)
+    if lambda_diffusion > 0.0:
+        loss_diffusion = lambda_diffusion * diffusion_prior_loss(x)
 
-    return loss_data + loss_x + loss_k + loss_pink
+    return loss_data + loss_x + loss_k + loss_pink + loss_diffusion
 
 
 if __name__ == "__main__":
