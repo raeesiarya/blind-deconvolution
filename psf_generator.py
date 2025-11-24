@@ -1,18 +1,3 @@
-
-
-"""psf_generator.py
-
-Basic PSF (Point Spread Function) generators for the blind deconvolution project.
-
-This module provides analytic PSFs:
-- Delta (identity) PSF
-- Gaussian blur PSF
-- Motion blur PSF (with angle)
-- Disk (out-of-focus) blur PSF
-
-All PSFs are returned as float64 numpy arrays, normalized to sum to 1.
-"""
-
 from __future__ import annotations
 
 import numpy as np

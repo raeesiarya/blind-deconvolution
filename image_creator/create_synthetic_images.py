@@ -4,8 +4,8 @@ and save them into the images directory.
 """
 import os
 from typing import List
-from skimage import io
 import numpy as np
+from skimage import img_as_ubyte, io
 
 DEFAULT_SIZE = 256
 DEFAULT_OUTPUT_DIR = "images/synthetic"
@@ -121,7 +121,6 @@ def generate_images(output_dir: str = DEFAULT_OUTPUT_DIR, size: int = DEFAULT_SI
         "pink_noise.png": gen_pink_noise(size=size),
     }
 
-    from skimage import img_as_ubyte
     saved_paths = []
     for filename, image in images.items():
         path = os.path.join(output_dir, filename)
