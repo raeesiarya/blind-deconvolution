@@ -1,46 +1,47 @@
 # Blind Deconvolution Playground
 
-Small research playground for single-image blind deconvolution. The pipeline builds a synthetic measurement (blur + noise), then jointly optimizes the latent sharp image and PSF kernel with a MAP objective. Metrics and qualitative outputs are logged to Weights & Biases for quick inspection.
+Research playground for single-image blind deconvolution. The testbench builds synthetic measurements (blur + noise) for each clean image, then jointly optimizes the latent sharp image and PSF kernel with a MAP objective. Metrics and qualitative outputs are logged to Weights & Biases.
 
 ## What’s inside
-- `main.py`: entrypoint; loads images from `images/`, synthesizes blur with a Gaussian PSF + noise, runs optimization, and logs PSNR/SSIM + visuals to W&B.
-- `blind_deconvolution/`: core solver (`BlindDeconvolver`), forward model, PSF generators (Gaussian/motion/disk/delta), and priors (pink-noise and a diffusion prior stub).
-- `utils/`: image I/O and path helpers, NumPy↔Torch converters, metrics (PSNR/SSIM), and W&B image helpers.
-- `images/`: sample `synthetic/` patterns and a `real/` folder for your own data. Supported extensions: png/jpg/jpeg/tif/tiff/bmp.
+- `main.py`: orchestrates the sweep of testbench configs and calls the core experiment runner.
+- `testing/testbench.py`: runs each config across all images and PSF types, logs W&B artifacts/metrics (PSNR, SSIM, kernel error, loss curves).
+- `testing/testbench_configs.py`: list of named experiment configs (iter counts, LRs, priors, kernel sizes, PSF settings).
+- `blind_deconvolution/`: core solver (`BlindDeconvolver`), forward model, PSF generators (gaussian/motion/disk/delta), and priors (pink-noise + diffusion stub hook).
+- `utils/`: image I/O, path helpers, NumPy↔Torch converters, metrics, device chooser, and W&B helpers.
+- `images/`: sample `synthetic/` patterns and a `real/` folder for your data. Supported: png/jpg/jpeg/tif/tiff/bmp.
 
 ## Setup (UV + Weights & Biases)
 1. Install UV if you don’t have it.
-2. Create and activate the env:
+2. Create the env and install deps:
    ```bash
    uv venv
-   uv sync
    source .venv/bin/activate
+   uv sync
    ```
-3. Install dependencies in editable mode:
-   ```bash
-   uv add pyproject.toml
-   ```
-4. Authenticate with Weights & Biases (or set `WANDB_MODE=offline` if you prefer no logging):
+3. Put your W&B API key in `.env` (`WANDB_API_KEY=...`) or export it in your shell. Use `WANDB_MODE=offline` if you want no network logging.
+4. Authenticate with W&B when online:
    ```bash
    wandb login
    ```
 
-## Running the demo
-Place one or more grayscale-compatible images in `images/` (subfolders are picked up). Then run:
-```bash
-python main.py
-```
-What happens:
-- Each image is converted to grayscale, normalized, and blurred with a Gaussian PSF (`kernel_size` and `sigma` defined in code) plus small Gaussian noise.
-- The solver performs gradient-based joint optimization of the image (`x`) and kernel (`k`) using Adam.
-- PSNR/SSIM, loss curves, reconstructions, and kernels are logged to W&B per image; mean PSNR/SSIM are stored in the run summary.
+## Running the testbench
+1. Drop one or more images under `images/` (subfolders are picked up). Everything is converted to grayscale and normalized.
+2. Start the sweep:
+   ```bash
+   python main.py
+   ```
+   Each run iterates over every config in `testing/testbench_configs.py` and every PSF type defined in `testing/testbench.py` (delta, gaussian, motion, disk). Measurements add light Gaussian noise.
+
+What gets logged to W&B:
+- Per image/PSF: reconstructions, estimated vs. true kernels, loss curves, PSNR, SSIM, kernel error, and the blurred measurement.
+- Run summary aggregates: mean PSNR/SSIM/kernel error overall and by PSF type.
 
 ## Tuning / extending
-- Hyperparameters live in the `BlindDeconvConfig` in `main.py`: iteration count, learning rates (`lr_x`, `lr_k`), kernel size, and regularization weights (`lambda_k_l2`, `lambda_k_center`, `lambda_pink`, `lambda_diffusion`).
-- Image priors: plug a custom `image_prior_fn` into the config (the default is none). A diffusion-based prior hook exists in `blind_deconvolution/priors/diffusion.py`—replace the stub with your model’s score function.
-- Kernels: swap the synthetic blur by editing the PSF generator in `main.py` (e.g., use `motion_psf` or `disk_psf`).
-- Logging: adjust what’s sent to W&B in `main.py` or disable by exporting `WANDB_MODE=offline` before running.
+- Edit `TESTBENCH_CONFIGS` to add/remove sweeps or tweak hyperparams (`num_iters`, `lr_x`, `lr_k`, priors, kernel sizes, PSF params).
+- Adjust the PSF list or noise level in `testing/testbench.py`.
+- To try a custom prior, implement `image_prior_fn` in `BlindDeconvConfig` and wire it into `blind_deconvolution/priors/diffusion.py`.
+- Set `WANDB_MODE=offline` to disable logging, or change device selection in `utils/cuda_checker.py` (defaults to CUDA if available, else CPU).
 
 ## Notes
-- Currently optimized for single-channel images; extend the forward model if you need RGB.
-- The pipeline runs on CPU by default; set `device` in `main.py` to "cuda" if available.
+- Pipeline assumes single-channel images; extend the forward model if you need RGB.
+- Keep an eye on kernel sizes vs. image dimensions to avoid excessive padding effects.

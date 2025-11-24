@@ -1,81 +1,52 @@
 Blind Deconvolution – System Notes
-- Purpose: single-image blind deconvolution playground that synthesizes blurred measurements, optimizes the sharp image and PSF jointly with a MAP objective, and logs results to Weights & Biases.
-- Scope: grayscale images only; kernel treated as a single-channel 2D PSF.
-- Entrypoint: `main.py`.
+- Purpose: single-image blind deconvolution playground that now runs an experiment sweep via `testing/testbench.py` + `testing/testbench_configs.py`. Each config is run across all PSF types (delta/gaussian/motion/disk) and images, with metrics logged to Weights & Biases.
+- Scope: grayscale images only; PSF is single-channel 2D. Assumes batch size 1.
+- Entrypoint: `main.py` (loads `.env`, logs into W&B, iterates over `TESTBENCH_CONFIGS`).
 
-Pipeline at a Glance
-- Load images from `images/` (recursive; png/jpg/jpeg/tif/tiff/bmp).
-- Choose PSF(s) to simulate blur (delta/gaussian/motion/disk) and add Gaussian noise.
-- Run blind deconvolution: optimize both the image `x` and kernel `k` with Adam.
-- Enforce PSF non-negativity + sum-to-one; clamp image to [0, 1].
-- Log inputs, reconstructions, kernels, losses, PSNR, SSIM to W&B; summarize mean metrics.
+Workflow (runtime)
+- Discover images under `images/` (recursive; png/jpg/jpeg/tif/tiff/bmp).
+- For each config in `TESTBENCH_CONFIGS` and each PSF spec (delta, gaussian `sigma`, motion `length=kernel_size//2`, disk `radius=kernel_size/4`):
+  - Load `x_true`, grayscale/normalized torch `(1,1,H,W)`.
+  - Generate `k_true` via `get_psf`; synthesize measurement `y_meas = k_true * x_true + N(0, 0.01^2)`.
+  - Run `BlindDeconvolver` with that config, log every 10 steps; enforce non-negativity + sum-to-one on `k`, clamp `x` to [0,1].
+  - Log to W&B: gt, measurement, kernels, reconstructions, loss curves, PSNR, SSIM, kernel error; summary aggregates mean PSNR/SSIM/kernel error overall and by PSF.
 
-Mathematical Model
-- Forward model: `y = k * x + n`, implemented via `conv2d` with “same” padding (`blind_deconvolution/forward_model.py`); optional additive i.i.d. Gaussian noise with std `noise_sigma`.
+Mathematical Model (unchanged core)
+- Forward model: `y = k * x + n`, same-padding conv2d (`blind_deconvolution/forward_model.py`), optional Gaussian noise.
 - MAP objective (`blind_deconvolution/map_objective.py`):
-  - Data term: `|| y_meas - k * x ||^2`.
-  - Kernel prior `Psi(k)`:
-    - L2: `lambda_k_l2 * mean(k^2)`.
-    - Center-of-mass: `lambda_k_center * E_k[r^2]` with radii on a [-1,1]x[-1,1] grid.
-  - Image prior `Phi(x)` hook: `lambda_x * prior_fn(x)` (user-supplied; mean-reduced if non-scalar).
-  - Pink-noise prior: `lambda_pink *  mean( |F(x)|^2 * f^alpha )`, alpha=1 default (`priors/pink_noise.py`).
-  - Diffusion prior: `lambda_diffusion * 0.5 * ||score(x)||^2`, where `score` is approximated by a pretrained DDPM UNet (`priors/diffusion.py`).
-  - Total loss: `L = data + kernel + image + pink + diffusion`.
-- Optimization:
-  - Separate Adam parameter groups for `x` and `k` with learning rates `lr_x`, `lr_k`; iterations `num_iters`.
-  - After each step: project `k` to be non-negative and normalized; clamp `x` to [0,1].
+  - Data: `|| y_meas - k * x ||^2`.
+  - Kernel priors: `lambda_k_l2 * mean(k^2)` + center-of-mass penalty `lambda_k_center * E_k[r^2]`.
+  - Image prior hook: `lambda_x * prior_fn(x)` (mean-reduced if non-scalar).
+  - Pink-noise prior: `lambda_pink * pink_noise_loss(x)` (`priors/pink_noise.py`).
+  - Diffusion prior: `lambda_diffusion * diffusion_prior_loss(x)` (DDPM via `priors/diffusion.py`, heavy download/GPU expected).
+  - Total: data + kernel + image + pink + diffusion.
+- Optimization: separate Adam groups for `x` and `k` (`lr_x`, `lr_k`, `num_iters`). Post-step projection for `k` and clamp for `x`.
 
 Key Modules
-- `main.py`: Orchestrates runs. Loads images, loops over PSF specs, builds measurements, runs solver, logs to W&B. Tracks per-PSF PSNR/SSIM averages in run summary.
-- `blind_deconvolution/blind_deconvolution.py`: `BlindDeconvConfig` (hyperparameters + prior hook) and `BlindDeconvolver` (initialization, projections, run loop).
-- `blind_deconvolution/forward_model.py`: Convolution + optional Gaussian noise.
-- `blind_deconvolution/map_objective.py`: Composes data fidelity + priors into a scalar loss.
-- `blind_deconvolution/psf_generator.py`: PSF factories: delta, Gaussian (`sigma`), motion (`length`, `angle`), disk (`radius`); all normalized, non-negative.
-- Priors (`blind_deconvolution/priors/`):
-  - `pink_noise.py`: Fourier-domain 1/f^alpha prior.
-  - `diffusion.py`: DDPM-based score; uses `diffusers.DDPMPipeline` (heavy download, assumes network/GPU if available).
-- Utilities (`utils/`):
-  - `image_io.py`: Load images (grayscale option, normalization) to numpy or torch `(1,1,H,W)`.
-  - `image_paths.py`: Discover images under `images/`.
-  - `convertors.py`: NumPy↔Torch helpers for images/kernels.
-  - `metrics.py`: PSNR, SSIM (skimage) for `(1,1,H,W)` tensors.
-  - `wandb_logging.py`: Safe tensor → `wandb.Image` conversion with normalization.
-  - `cuda_checker.py`: Simple CPU/GPU chooser.
-- Data generation (`image_creator/create_synthetic_images.py`): Generates patterns (checkerboard, gradients, circle, bars, pink noise) into `images/synthetic/`.
+- `main.py`: loads WANDB key from `.env` (`WANDB_API_KEY`), logs into W&B, iterates configs, calls `testing/testbench.testebench`.
+- `testing/testbench.py`: runs each config across PSF types/images; handles measurement synthesis, logging, metric aggregation.
+- `testing/testbench_configs.py`: list of experiment configs (iters, LRs, priors, kernel sizes, PSF params).
+- `blind_deconvolution/`: solver (`BlindDeconvolver` + `BlindDeconvConfig`), forward model, MAP objective, PSF generators, priors.
+- `utils/`: image I/O/paths, NumPy↔Torch converters, metrics, W&B helpers, device chooser.
+- `image_creator/create_synthetic_images.py`: optional synthetic data generator for `images/synthetic/`.
 
-Configuration Surface (BlindDeconvConfig in `main.py` unless overridden)
-- `num_iters`: optimization steps (default 100 in `main.py`, 500 in class default).
-- `lr_x`, `lr_k`: Adam learning rates for image and kernel.
-- `kernel_size`: PSF spatial size (odd recommended for “same” padding symmetry).
-- Priors: `lambda_x` (custom image prior hook), `lambda_k_l2`, `lambda_k_center`, `lambda_pink`, `lambda_diffusion`.
-- `image_prior_fn`: optional callable `f(x)->scalar`; pass e.g. TV or score function.
-- `device`: `"cpu"` or `"cuda"` from `utils.cuda_checker.choose_device()`.
+Config Surface
+- Testbench configs (`testing/testbench_configs.py`): `num_iters`, `lr_x`, `lr_k`, `lambda_x`, `lambda_k_l2`, `lambda_k_center`, `lambda_pink`, `lambda_diffusion`, `kernel_size`, `sigma_gaussian`, `angle_motion`, optional `name`. Noise std is fixed at 0.01 inside `testbench.py`.
+- Solver config (`BlindDeconvConfig`): same fields plus optional `image_prior_fn` and `device` (from `utils.cuda_checker.choose_device()`).
 
-Runtime Flow in `main.py`
-- Load W&B API key from `.env` (`WANDB_API_KEY`) and login (respect `WANDB_MODE=offline` to disable uploads).
-- Build PSF list: delta, Gaussian, motion, disk (size pulled from config).
-- For each image × PSF:
-  - Load `x_true` (grayscale torch, normalized).
-  - Generate ground-truth PSF (`get_psf`), convert to torch.
-  - Form measurement `y_meas = k_true * x_true + N(0, 0.01^2)`.
-  - Instantiate `BlindDeconvolver(config)`, run optimization with logging hook every 10 iters.
-  - Log inputs (gt, measurement, true kernel) at step offset; log reconstructions, estimated kernel, loss curve, PSNR/SSIM at the end.
-- After loop: aggregate mean PSNR/SSIM overall and per-PSF into W&B summary.
-
-Practical Notes / Limitations
-- Single-image batches only (`B=1`, single-channel); extend forward model and solver to support RGB or batches if needed.
-- Kernel projection ensures sums to 1; if the learned kernel collapses, consider stronger `lambda_k_center` or adjusting learning rates.
-- Diffusion prior loads a pretrained DDPM via `diffusers`; expect large downloads and GPU memory needs. Keep `lambda_diffusion=0` if unavailable.
-- Pink-noise prior assumes normalized images in [0,1]; scale accordingly if changing data range.
-- W&B: set `WANDB_API_KEY` in `.env` or export; use `WANDB_MODE=offline` to avoid network use.
-
-How to Run
-- Install deps: `uv venv && uv sync && source .venv/bin/activate` (per `README.md`); ensure PyTorch/torchvision/torchaudio match platform.
-- (Optional) Generate synthetic data: `python image_creator/create_synthetic_images.py` to populate `images/synthetic/`.
-- Execute the pipeline: `python main.py`. Provide grayscale-friendly images in `images/` (subfolders OK).
+How to Run (UV kept)
+- Install deps: `uv venv && source .venv/bin/activate && uv sync`.
+- Set W&B auth: add `WANDB_API_KEY=...` to `.env` or export; use `WANDB_MODE=offline` to avoid uploads.
+- (Optional) Generate synthetic images: `python image_creator/create_synthetic_images.py`.
+- Execute sweep: `python main.py` (iterates all configs and PSF types over all images).
 
 Extending / Customizing
-- Swap PSFs: edit `psf_specs` in `main.py` or add new generators in `blind_deconvolution/psf_generator.py`.
-- Add image priors: pass `image_prior_fn` in `BlindDeconvConfig`, or implement new modules under `blind_deconvolution/priors/` and hook them in `map_objective`.
-- Modify logging: adjust `log_fn` or W&B payloads in `main.py`; disable logging by setting `wandb.init(..., mode=\"disabled\")` or env `WANDB_MODE=offline`.
-- Different noise model: change `noise_sigma` in measurement creation or modify `forward_model.add_gaussian_noise`.
+- Trim or add sweeps in `TESTBENCH_CONFIGS`; adjust PSF list or noise level in `testing/testbench.py`.
+- Implement custom priors via `image_prior_fn` or new modules under `blind_deconvolution/priors/` and plug into `map_objective`.
+- Add new PSF generators in `blind_deconvolution/psf_generator.py` and register in the testbench.
+- Tweak logging payloads or frequency via the `log_fn` in `testing/testbench.py`; disable W&B with `WANDB_MODE=offline` or `wandb.init(..., mode="disabled")`.
+
+Practical Notes / Limitations
+- Single-channel, batch size 1 pipeline; extend forward model/solver for RGB or batching if needed.
+- Large kernels vs. small images can cause padding artifacts; adjust `kernel_size` accordingly.
+- Diffusion prior is optional and resource-heavy; leave `lambda_diffusion=0` if compute or downloads are constrained.
