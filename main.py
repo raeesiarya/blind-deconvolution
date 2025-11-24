@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 
 def main():
     load_dotenv()
-    os.environ["WANDB_API_KEY"] = os.getenv("WANDB_API_KEY")
+    os.environ["WANDB_API_KEY"] = os.getenv("WANDB_API_KEY") # from https://wandb.ai/authorize
     wandb.login()
 
     device = choose_device()
