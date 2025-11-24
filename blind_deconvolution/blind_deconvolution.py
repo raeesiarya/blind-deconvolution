@@ -31,6 +31,7 @@ from blind_deconvolution.forward_model import forward_model
 from utils.convertors import numpy_image_to_tensor, numpy_kernel_to_tensor
 from blind_deconvolution.map_objective import map_objective
 from blind_deconvolution.psf_generator import gaussian_psf, delta_psf
+from utils.cuda_checker import choose_device
 
 
 @dataclass
@@ -242,7 +243,7 @@ if __name__ == "__main__":
     from skimage import io, color, img_as_float
 
     # Choose device
-    device = "cpu"
+    device = choose_device()
 
     # Load a test image (use any of your synthetic images)
     img_path = "images/synthetic/checkerboard.png"  # adjust as needed

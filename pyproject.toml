@@ -15,4 +15,6 @@ dependencies = [
     "pathlib>=1.0.1",
     "tqdm>=4.67.1",
     "wandb>=0.23.0",
+    "diffusers>=0.35.2",
+    "accelerate>=1.12.0",
 ]
