@@ -7,12 +7,19 @@ from blind_deconvolution.forward_model import forward_model
 from utils.wandb_logging import tensor_to_wandb_image
 from utils.convertors import numpy_kernel_to_tensor
 from utils.metrics import psnr, ssim
+from utils.cuda_checker import choose_device
 from dataclasses import asdict
 from collections import defaultdict
 import wandb
+import os
+from dotenv import load_dotenv
 
 def main():
-    device = "cpu"
+    load_dotenv()
+    os.environ["WANDB_API_KEY"] = os.getenv("WANDB_API_KEY") # from https://wandb.ai/authorize
+    wandb.login()
+
+    device = choose_device()
     image_paths = list_image_paths()
 
     if not image_paths:
@@ -26,8 +33,8 @@ def main():
         lambda_x=0.0,
         lambda_k_l2=1e-3,
         lambda_k_center=1e-3,
-        lambda_pink=0.05,
-        lambda_diffusion=0.0,
+        lambda_pink=0.0,
+        lambda_diffusion=0.01,
         kernel_size=15,
         device=device,
     )
