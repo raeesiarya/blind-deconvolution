@@ -44,6 +44,8 @@ class BlindDeconvConfig:
     lambda_x: float = 0.0          # image prior (Phi(x))
     lambda_k_l2: float = 1e-3      # L2 prior on kernel
     lambda_k_center: float = 1e-3  # center-of-mass prior on kernel
+    lambda_pink: float = 0.0      # pink-noise prior weight
+    lambda_diffusion: float = 0.0 # diffusion prior weight
 
     # Kernel settings
     kernel_size: int = 15
@@ -192,6 +194,8 @@ class BlindDeconvolver(nn.Module):
                 lambda_x=self.config.lambda_x,
                 lambda_k_l2=self.config.lambda_k_l2,
                 lambda_k_center=self.config.lambda_k_center,
+                lambda_pink=self.config.lambda_pink,
+                lambda_diffusion=self.config.lambda_diffusion,
                 image_prior_fn=self.config.image_prior_fn,
             )
 

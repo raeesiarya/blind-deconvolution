@@ -5,6 +5,7 @@ import torch
 from blind_deconvolution.psf_generator import gaussian_psf
 from blind_deconvolution.forward_model import forward_model
 from utils.convertors import numpy_kernel_to_tensor
+from utils.metrics import psnr, ssim
 
 def main():
     device = "cpu"
@@ -36,12 +37,20 @@ def main():
             lambda_x=0.0,
             lambda_k_l2=1e-3,
             lambda_k_center=1e-3,
+            lambda_pink=0.05,
+            lambda_diffusion=0.0,
             kernel_size=15,
             device=device,
         )
 
         solver = BlindDeconvolver(config).to(device)
         x_hat, k_hat, losses = solver.run(y_meas, verbose=True)
+
+        # Compute evaluation metrics
+        p = psnr(x_hat, x_true)
+        s = ssim(x_hat, x_true)
+
+        print(f"PSNR: {p:.2f} dB, SSIM: {s:.4f}")
 
         print(f"Finished. Final loss: {losses[-1]:.6f}")
         print(f"x_hat shape: {tuple(x_hat.shape)}, k_hat shape: {tuple(k_hat.shape)}")
