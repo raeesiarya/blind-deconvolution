@@ -1,4 +1,3 @@
-
 """
 blind_deconvolution.py
 
@@ -42,11 +41,12 @@ class BlindDeconvConfig:
     lr_k: float = 1e-2
 
     # MAP prior weights
-    lambda_x: float = 0.0          # image prior (Phi(x))
-    lambda_k_l2: float = 1e-3      # L2 prior on kernel
+    lambda_x: float = 0.0  # image prior (Phi(x))
+    lambda_k_l2: float = 1e-3  # L2 prior on kernel
     lambda_k_center: float = 1e-3  # center-of-mass prior on kernel
-    lambda_pink: float = 0.0      # pink-noise prior weight
-    lambda_diffusion: float = 0.0 # diffusion prior weight
+    lambda_k_auto: float = 0.0  # autocorrelation prior (k * k -> delta)
+    lambda_pink: float = 0.0  # pink-noise prior weight
+    lambda_diffusion: float = 0.0  # diffusion prior weight
 
     # Kernel settings
     kernel_size: int = 15
@@ -93,7 +93,9 @@ class BlindDeconvolver(nn.Module):
             y_meas: Tensor of shape (B, 1, H, W). Currently B must be 1.
         """
         if y_meas.dim() != 4 or y_meas.shape[1] != 1:
-            raise ValueError(f"Expected y_meas of shape (B,1,H,W), got {tuple(y_meas.shape)}")
+            raise ValueError(
+                f"Expected y_meas of shape (B,1,H,W), got {tuple(y_meas.shape)}"
+            )
 
         if y_meas.shape[0] != 1:
             raise NotImplementedError("Current implementation supports B=1 only.")
@@ -131,7 +133,7 @@ class BlindDeconvolver(nn.Module):
         with torch.no_grad():
             k = self.k_param.data
             k.clamp_(min=0.0)
-            k /= (k.sum() + 1e-8)
+            k /= k.sum() + 1e-8
             self.k_param.data = k
 
     def project_image(self) -> None:
@@ -192,17 +194,26 @@ class BlindDeconvolver(nn.Module):
         for it in iterator:
             optimizer.zero_grad()
 
-            loss = map_objective(
+            need_components = log_fn is not None
+            result = map_objective(
                 self.x_param,
                 self.k_param,
                 y_meas,
                 lambda_x=self.config.lambda_x,
                 lambda_k_l2=self.config.lambda_k_l2,
                 lambda_k_center=self.config.lambda_k_center,
+                lambda_k_auto=self.config.lambda_k_auto,
                 lambda_pink=self.config.lambda_pink,
                 lambda_diffusion=self.config.lambda_diffusion,
                 image_prior_fn=self.config.image_prior_fn,
+                return_components=need_components,
             )
+
+            if need_components:
+                loss, loss_components = result
+            else:
+                loss = result
+                loss_components = None
 
             loss.backward()
             optimizer.step()
@@ -216,7 +227,15 @@ class BlindDeconvolver(nn.Module):
 
             if log_fn is not None and log_every > 0:
                 if (it % log_every == 0) or (it == self.config.num_iters - 1):
-                    log_fn({"loss": loss_value}, it)
+                    metrics = {"loss": loss_value}
+                    if loss_components is not None:
+                        metrics.update(
+                            {
+                                name: float(val.detach().cpu().item())
+                                for name, val in loss_components.items()
+                            }
+                        )
+                    log_fn(metrics, it)
 
             if verbose:
                 iterator.set_postfix({"loss": f"{loss_value:.6f}"})
@@ -277,11 +296,11 @@ if __name__ == "__main__":
         num_iters=300,
         lr_x=1e-2,
         lr_k=1e-2,
-        lambda_x=0.0,          # no image prior yet
+        lambda_x=0.0,  # no image prior yet
         lambda_k_l2=1e-3,
         lambda_k_center=1e-3,
         kernel_size=15,
-        image_prior_fn=None,   # hook for diffusion / TV later
+        image_prior_fn=None,  # hook for diffusion / TV later
         device=device,
     )
 

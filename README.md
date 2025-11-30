@@ -37,7 +37,7 @@ What gets logged to W&B:
 - Run summary aggregates: mean PSNR/SSIM/kernel error overall and by PSF type.
 
 ## Tuning / extending
-- Edit `TESTBENCH_CONFIGS` to add/remove sweeps or tweak hyperparams (`num_iters`, `lr_x`, `lr_k`, priors, kernel sizes, PSF params).
+- Edit `TESTBENCH_CONFIGS` to add/remove sweeps or tweak hyperparams (`num_iters`, `lr_x`, `lr_k`, priors including `lambda_k_auto`, kernel sizes, PSF params).
 - A pre-made `diffusion_rml_only` config runs the randomized PSF generator; copy/tune it to explore different bandwidths or seeds.
 - Adjust the PSF list or noise level in `testing/testbench.py`.
 - To try a custom prior, implement `image_prior_fn` in `BlindDeconvConfig` and wire it into `blind_deconvolution/priors/diffusion.py`.
@@ -46,3 +46,4 @@ What gets logged to W&B:
 ## Notes
 - Pipeline assumes single-channel images; extend the forward model if you need RGB.
 - Keep an eye on kernel sizes vs. image dimensions to avoid excessive padding effects.
+- Kernel priors include an optional autocorrelation penalty (`lambda_k_auto`) to encourage randomized-optics kernels (k * k ~ delta).

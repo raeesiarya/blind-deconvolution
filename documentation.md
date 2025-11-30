@@ -15,7 +15,7 @@ Mathematical Model (unchanged core)
 - Forward model: `y = k * x + n`, same-padding conv2d (`blind_deconvolution/forward_model.py`), optional Gaussian noise.
 - MAP objective (`blind_deconvolution/map_objective.py`):
   - Data: `|| y_meas - k * x ||^2`.
-  - Kernel priors: `lambda_k_l2 * mean(k^2)` + center-of-mass penalty `lambda_k_center * E_k[r^2]`.
+  - Kernel priors: `lambda_k_l2 * mean(k^2)` + center-of-mass penalty `lambda_k_center * E_k[r^2]` + autocorrelation penalty `lambda_k_auto * kernel_autocorrelation_loss(k)` (encourages `k * k -> delta`).
   - Image prior hook: `lambda_x * prior_fn(x)` (mean-reduced if non-scalar).
   - Pink-noise prior: `lambda_pink * pink_noise_loss(x)` (`priors/pink_noise.py`).
   - Diffusion prior: `lambda_diffusion * diffusion_prior_loss(x)` (DDPM via `priors/diffusion.py`, heavy download/GPU expected).
@@ -31,7 +31,7 @@ Key Modules
 - `image_creator/create_synthetic_images.py`: optional synthetic data generator for `images/synthetic/`.
 
 Config Surface
-- Testbench configs (`testing/testbench_configs.py`): `num_iters`, `lr_x`, `lr_k`, `lambda_x`, `lambda_k_l2`, `lambda_k_center`, `lambda_pink`, `lambda_diffusion`, `kernel_size`, `sigma_gaussian`, `motion_length`, `angle_motion`, `fried_parameter_turbulence`, `distortion_strength_turbulence`, `seed_turbulence`, `bandwidth_rml`, `seed_rml`, `psf_types` (subset of ["none", "gaussian", "motion", "turbulence", "rml"]), optional `name`. Noise std is fixed at 0.01 inside `testbench.py`.
+- Testbench configs (`testing/testbench_configs.py`): `num_iters`, `lr_x`, `lr_k`, `lambda_x`, `lambda_k_l2`, `lambda_k_center`, `lambda_k_auto`, `lambda_pink`, `lambda_diffusion`, `kernel_size`, `sigma_gaussian`, `motion_length`, `angle_motion`, `fried_parameter_turbulence`, `distortion_strength_turbulence`, `seed_turbulence`, `bandwidth_rml`, `seed_rml`, `psf_types` (subset of ["none", "gaussian", "motion", "turbulence", "rml"]), optional `name`. Noise std is fixed at 0.01 inside `testbench.py`.
 - Solver config (`BlindDeconvConfig`): same fields plus optional `image_prior_fn` and `device` (from `utils.cuda_checker.choose_device()`).
 
 How to Run (UV kept)

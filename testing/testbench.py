@@ -21,6 +21,7 @@ def testebench(
     lambda_x: float,
     lambda_k_l2: float,
     lambda_k_center: float,
+    lambda_k_auto: float = 0.0,
     lambda_pink: float,
     lambda_diffusion: float,
     kernel_size: int,
@@ -45,6 +46,7 @@ def testebench(
         lambda_x (float): Weight for the image prior regularization term.
         lambda_k_l2 (float): L2 regularization weight applied to the kernel to discourage large values.
         lambda_k_center (float): Weight encouraging kernel mass to be centered.
+        lambda_k_auto (float): Weight encouraging low autocorrelation (k * k ~ delta).
         lambda_pink (float): Weight for a pink-noise (1/f) prior on the kernel, if used.
         lambda_diffusion (float): Weight for diffusion-based regularization on image or kernel updates.
         kernel_size (int): Size (height/width) of the square PSF kernel to generate and estimate.
@@ -69,6 +71,7 @@ def testebench(
         lambda_x=lambda_x,
         lambda_k_l2=lambda_k_l2,
         lambda_k_center=lambda_k_center,
+        lambda_k_auto=lambda_k_auto,
         lambda_pink=lambda_pink,
         lambda_diffusion=lambda_diffusion,
         kernel_size=kernel_size,
