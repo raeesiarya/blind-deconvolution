@@ -30,6 +30,8 @@ def testebench(
     fried_parameter_turbulence: float | None = None,
     distortion_strength_turbulence: float = 0.8,
     seed_turbulence: int | None = None,
+    bandwidth_rml: float | None = None,
+    seed_rml: int | None = None,
     psf_types: list[str] | None = None,
     run_name: str | None = None,
 ) -> None:
@@ -54,8 +56,10 @@ def testebench(
         distortion_strength_turbulence (float): Scales random distortions that make the turbulence
             PSF irregular and harder than the motion blur baseline.
         seed_turbulence (int | None): Optional RNG seed to make turbulence PSFs repeatable.
+        bandwidth_rml (float | None): Fractional Fourier cutoff for randomized optics PSFs.
+        seed_rml (int | None): Optional RNG seed for randomized optics PSFs.
         psf_types (list[str] | None): Which PSF scenarios to run. Supported: ["none", "gaussian",
-            "motion", "turbulence"]. If None, runs the blurred trio (gaussian/motion/turbulence).
+            "motion", "turbulence", "rml"]. If None, runs the blurred trio (gaussian/motion/turbulence).
         run_name (str | None): Optional W&B run name for deterministic labeling.
     """
     config = BlindDeconvConfig(
@@ -73,10 +77,12 @@ def testebench(
 
     default_types = ["gaussian", "motion", "turbulence"]
     selected_types = psf_types or default_types
-    unknown = [t for t in selected_types if t not in ["none", "gaussian", "motion", "turbulence"]]
+    unknown = [
+        t for t in selected_types if t not in ["none", "gaussian", "motion", "turbulence", "rml"]
+    ]
     if unknown:
         raise ValueError(
-            f"Unsupported psf_types: {unknown}. Supported: ['none', 'gaussian', 'motion', 'turbulence']"
+            f"Unsupported psf_types: {unknown}. Supported: ['none', 'gaussian', 'motion', 'turbulence', 'rml']"
         )
 
     # Only fill defaults for PSFs that are actually requested.
@@ -100,6 +106,9 @@ def testebench(
         if distortion_strength_turbulence is not None
         else (0.8 if "turbulence" in selected_types else None)
     )
+    rml_bandwidth_val = (
+        bandwidth_rml if bandwidth_rml is not None else (0.35 if "rml" in selected_types else None)
+    )
 
     base_specs: dict[str, dict] = {
         "none": {"params": {}},
@@ -110,6 +119,12 @@ def testebench(
                 "fried_parameter": turbulence_fried,
                 "distortion_strength": distortion_strength_val,
                 "seed": seed_turbulence,
+            }
+        },
+        "rml": {
+            "params": {
+                "bandwidth": rml_bandwidth_val,
+                "seed": seed_rml,
             }
         },
     }
@@ -126,6 +141,8 @@ def testebench(
         "turbulence_fried_parameter": turbulence_fried,
         "turbulence_distortion_strength": distortion_strength_val,
         "turbulence_seed": seed_turbulence if "turbulence" in selected_types else None,
+        "rml_bandwidth": rml_bandwidth_val,
+        "rml_seed": seed_rml if "rml" in selected_types else None,
     }
 
     run = wandb.init(

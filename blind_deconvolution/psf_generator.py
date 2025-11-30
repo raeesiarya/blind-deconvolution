@@ -145,6 +145,45 @@ def turbulence_psf(
     return _normalize_psf(psf)
 
 
+def rml_psf(
+    size: int = 15, bandwidth: float = 0.35, seed: int | None = None
+) -> np.ndarray:
+    """Randomized optics PSF using band-limited random Fourier phases.
+
+    Args:
+        size: Size of the PSF (size x size).
+        bandwidth: Fraction of the Nyquist radius to keep in the Fourier domain;
+            controls speckle granularity (0 < bandwidth <= 1).
+        seed: Optional RNG seed for repeatability.
+
+    Returns:
+        Randomized PSF drawn from a low-correlation distribution.
+    """
+    if size <= 0:
+        raise ValueError("size must be positive")
+    if bandwidth <= 0 or bandwidth > 1:
+        raise ValueError("bandwidth must be in (0, 1]")
+
+    rng = np.random.default_rng(seed)
+
+    # Build a circular band-limit mask in normalized frequency units (Nyquist = 0.5).
+    freqs = np.fft.fftfreq(size)
+    fx, fy = np.meshgrid(freqs, freqs)
+    radius = np.sqrt(fx**2 + fy**2)
+    cutoff = 0.5 * bandwidth
+    mask = (radius <= cutoff).astype(np.float64)
+    if not np.any(mask):
+        raise ValueError("bandwidth is too small; band-limit mask is empty")
+
+    # Randomize Fourier phases via white noise, then enforce the band-limit.
+    spectrum = np.fft.fft2(rng.standard_normal((size, size))) * mask
+    field = np.fft.ifft2(spectrum)
+
+    # Intensity of the complex field yields a nonnegative speckle-like PSF.
+    psf = np.abs(field) ** 2
+    return _normalize_psf(psf)
+
+
 ##############################
 # Factory / Convenience
 ##############################
@@ -154,7 +193,7 @@ def get_psf(psf_type: str, size: int = 15, **kwargs) -> np.ndarray:
     """Convenience factory to get a PSF by name.
 
     Args:
-        psf_type: One of ["gaussian", "motion", "turbulence"].
+        psf_type: One of ["gaussian", "motion", "turbulence", "rml"].
         size: Kernel size.
         **kwargs: Extra parameters forwarded to the underlying generator.
 
@@ -176,12 +215,18 @@ def get_psf(psf_type: str, size: int = 15, **kwargs) -> np.ndarray:
             distortion_strength=kwargs.get("distortion_strength", 0.6),
             seed=kwargs.get("seed"),
         )
+    if psf_type == "rml":
+        return rml_psf(
+            size=size,
+            bandwidth=kwargs.get("bandwidth", 0.35),
+            seed=kwargs.get("seed"),
+        )
 
     raise ValueError(f"Unknown psf_type: {psf_type}")
 
 
 if __name__ == "__main__":
     # Quick sanity check when running this file directly
-    for name in ["gaussian", "motion", "turbulence"]:
+    for name in ["gaussian", "motion", "turbulence", "rml"]:
         k = get_psf(name, size=15)
         print(name, k.shape, k.sum(), k.min(), k.max())

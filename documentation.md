@@ -1,11 +1,11 @@
 Blind Deconvolution – System Notes
-- Purpose: single-image blind deconvolution playground that now runs an experiment sweep via `testing/testbench.py` + `testing/testbench_configs.py`. Each config is run across all PSF types (gaussian/motion/turbulence) and images, with metrics logged to Weights & Biases.
+- Purpose: single-image blind deconvolution playground that now runs an experiment sweep via `testing/testbench.py` + `testing/testbench_configs.py`. Each config is run across PSF types (gaussian/motion/turbulence/rml) and images, with metrics logged to Weights & Biases.
 - Scope: grayscale images only; PSF is single-channel 2D. Assumes batch size 1.
 - Entrypoint: `main.py` (loads `.env`, logs into W&B, iterates over `TESTBENCH_CONFIGS`).
 
 Workflow (runtime)
 - Discover images under `images/` (recursive; png/jpg/jpeg/tif/tiff/bmp).
-- For each config in `TESTBENCH_CONFIGS` and each PSF spec (subset of gaussian `sigma`, motion `length/angle`, turbulence `fried`, `distortion_strength`, optional `seed`, or `none` for identity blur):
+- For each config in `TESTBENCH_CONFIGS` and each PSF spec (subset of gaussian `sigma`, motion `length/angle`, turbulence `fried`, `distortion_strength`, optional seeds, RML `bandwidth`, or `none` for identity blur):
   - Load `x_true`, grayscale/normalized torch `(1,1,H,W)`.
   - Generate `k_true` via `get_psf` (or identity when `psf_type="none"`); synthesize measurement `y_meas = k_true * x_true + N(0, 0.01^2)`.
   - Run `BlindDeconvolver` with that config, log every 10 steps; enforce non-negativity + sum-to-one on `k`, clamp `x` to [0,1].
@@ -31,7 +31,7 @@ Key Modules
 - `image_creator/create_synthetic_images.py`: optional synthetic data generator for `images/synthetic/`.
 
 Config Surface
-- Testbench configs (`testing/testbench_configs.py`): `num_iters`, `lr_x`, `lr_k`, `lambda_x`, `lambda_k_l2`, `lambda_k_center`, `lambda_pink`, `lambda_diffusion`, `kernel_size`, `sigma_gaussian`, `motion_length`, `angle_motion`, `fried_parameter_turbulence`, `distortion_strength_turbulence`, `seed_turbulence`, `psf_types` (subset of ["none", "gaussian", "motion", "turbulence"]), optional `name`. Noise std is fixed at 0.01 inside `testbench.py`.
+- Testbench configs (`testing/testbench_configs.py`): `num_iters`, `lr_x`, `lr_k`, `lambda_x`, `lambda_k_l2`, `lambda_k_center`, `lambda_pink`, `lambda_diffusion`, `kernel_size`, `sigma_gaussian`, `motion_length`, `angle_motion`, `fried_parameter_turbulence`, `distortion_strength_turbulence`, `seed_turbulence`, `bandwidth_rml`, `seed_rml`, `psf_types` (subset of ["none", "gaussian", "motion", "turbulence", "rml"]), optional `name`. Noise std is fixed at 0.01 inside `testbench.py`.
 - Solver config (`BlindDeconvConfig`): same fields plus optional `image_prior_fn` and `device` (from `utils.cuda_checker.choose_device()`).
 
 How to Run (UV kept)
