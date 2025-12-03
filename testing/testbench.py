@@ -18,14 +18,14 @@ def testebench(
     num_iters: int,
     lr_x: float,
     lr_k: float,
-    lambda_x: float,
-    lambda_k_l2: float,
-    lambda_k_center: float,
+    lambda_x: float = 0.0,
+    lambda_k_l2: float = 0.0,
+    lambda_k_center: float = 0.0,
     lambda_k_auto: float = 0.0,
-    lambda_pink: float,
-    lambda_diffusion: float,
-    kernel_size: int,
-    sigma_gaussian: float,
+    lambda_pink: float = 0.0,
+    lambda_diffusion: float = 0.0,
+    kernel_size: int = 21,
+    sigma_gaussian: float | None = None,
     motion_length: int | None = None,
     angle_motion: float = 0.0,
     fried_parameter_turbulence: float | None = None,
@@ -37,7 +37,7 @@ def testebench(
     run_name: str | None = None,
 ) -> None:
     """Run blind deconvolution experiments across a dataset of images and multiple PSF types,
-    logging intermediate results and evaluation metrics to Weights & Biases.
+    logging only final evaluation metrics and artifacts to Weights & Biases.
 
     Args:
         num_iters (int): Number of optimization iterations to perform for each image/PSF.
@@ -81,7 +81,9 @@ def testebench(
     default_types = ["gaussian", "motion", "turbulence"]
     selected_types = psf_types or default_types
     unknown = [
-        t for t in selected_types if t not in ["none", "gaussian", "motion", "turbulence", "rml"]
+        t
+        for t in selected_types
+        if t not in ["none", "gaussian", "motion", "turbulence", "rml"]
     ]
     if unknown:
         raise ValueError(
@@ -102,7 +104,11 @@ def testebench(
     turbulence_fried = (
         fried_parameter_turbulence
         if fried_parameter_turbulence is not None
-        else (max(1.0, config.kernel_size / 10) if "turbulence" in selected_types else None)
+        else (
+            max(1.0, config.kernel_size / 10)
+            if "turbulence" in selected_types
+            else None
+        )
     )
     distortion_strength_val = (
         distortion_strength_turbulence
@@ -110,7 +116,9 @@ def testebench(
         else (0.8 if "turbulence" in selected_types else None)
     )
     rml_bandwidth_val = (
-        bandwidth_rml if bandwidth_rml is not None else (0.35 if "rml" in selected_types else None)
+        bandwidth_rml
+        if bandwidth_rml is not None
+        else (0.35 if "rml" in selected_types else None)
     )
 
     base_specs: dict[str, dict] = {
@@ -158,14 +166,12 @@ def testebench(
 
     psnr_scores = defaultdict(list)
     ssim_scores = defaultdict(list)
-    num_psfs = len(psf_specs)
     kernel_errors = defaultdict(list)
     device = choose_device()
 
     try:
         for img_idx, img_path in enumerate(list_image_paths()):
             print(f"\n=== Processing {img_path} ===")
-            img_label = img_path.stem
 
             # Load clean image x_true
             x_true = load_image(
@@ -173,10 +179,6 @@ def testebench(
             ).to(device)
 
             for psf_idx, (psf_name, psf_kwargs) in enumerate(psf_specs):
-                psf_label = f"{img_label}/{psf_name}"
-                combo_idx = img_idx * num_psfs + psf_idx
-                step_offset = combo_idx * (config.num_iters + 1)
-
                 # Generate ground-truth PSF (or identity if psf_name == "none")
                 if psf_name == "none":
                     k_np = np.zeros(
@@ -194,37 +196,17 @@ def testebench(
 
                 solver = BlindDeconvolver(config).to(device)
 
-                def log_fn(metrics: dict, step: int) -> None:
-                    namespaced = {f"{psf_label}/{k}": v for k, v in metrics.items()}
-                    wandb.log(
-                        {
-                            "image_name": img_path.name,
-                            "psf_type": psf_name,
-                            **namespaced,
-                        },
-                        step=step_offset + step,
-                    )
+                x_hat, k_hat, losses = solver.run(y_meas, verbose=True, log_fn=None)
 
-                # Log inputs for this image/PSF
+                # Log only the essentials for this image/PSF pairing
                 wandb.log(
                     {
                         "image_name": img_path.name,
                         "psf_type": psf_name,
-                        f"{psf_label}/ground_truth": tensor_to_wandb_image(
-                            x_true, f"gt_{img_path.name}"
+                        "measurement": tensor_to_wandb_image(
+                            y_meas, f"measurement_{img_path.name}"
                         ),
-                        f"{psf_label}/measurement": tensor_to_wandb_image(
-                            y_meas, f"blurred_{img_path.name}"
-                        ),
-                        f"{psf_label}/true_kernel": tensor_to_wandb_image(
-                            k_true, f"k_true_{img_path.name}"
-                        ),
-                    },
-                    step=step_offset,
-                )
-
-                x_hat, k_hat, losses = solver.run(
-                    y_meas, verbose=True, log_fn=log_fn, log_every=10
+                    }
                 )
 
                 # Compute evaluation metrics
@@ -239,17 +221,16 @@ def testebench(
                     {
                         "image_name": img_path.name,
                         "psf_type": psf_name,
-                        f"{psf_label}/psnr": p,
-                        f"{psf_label}/ssim": s,
-                        f"{psf_label}/kernel_error": k_err,
-                        f"{psf_label}/final_loss": losses[-1],
-                        f"{psf_label}/reconstruction": tensor_to_wandb_image(
+                        "psnr": p,
+                        "ssim": s,
+                        "kernel_error": k_err,
+                        "reconstruction": tensor_to_wandb_image(
                             x_hat, f"recon_{img_path.name}"
                         ),
-                        f"{psf_label}/estimated_kernel": tensor_to_wandb_image(
+                        "estimated_kernel": tensor_to_wandb_image(
                             k_hat, f"k_hat_{img_path.name}"
                         ),
-                        f"{psf_label}/loss_curve": wandb.plot.line_series(
+                        "loss_curve": wandb.plot.line_series(
                             xs=list(range(len(losses))),
                             ys=[losses],
                             keys=["loss"],
@@ -257,7 +238,6 @@ def testebench(
                             xname="iter",
                         ),
                     },
-                    step=step_offset + config.num_iters,
                 )
 
                 print(
@@ -277,22 +257,22 @@ def testebench(
             if all_psnr:
                 wandb.run.summary["mean_psnr"] = sum(all_psnr) / len(all_psnr)
                 wandb.run.summary["mean_ssim"] = sum(all_ssim) / len(all_ssim)
-                wandb.run.summary["mean_psnr_by_psf"] = {
-                    name: sum(scores) / len(scores)
-                    for name, scores in psnr_scores.items()
-                    if scores
-                }
-                wandb.run.summary["mean_ssim_by_psf"] = {
-                    name: sum(scores) / len(scores)
-                    for name, scores in ssim_scores.items()
-                    if scores
-                }
                 wandb.run.summary["mean_kernel_error"] = sum(all_kernel_errors) / len(
                     all_kernel_errors
                 )
-                wandb.run.summary["mean_kernel_error_by_psf"] = {
-                    name: sum(scores) / len(scores)
-                    for name, scores in kernel_errors.items()
-                    if scores
-                }
+                for name, scores in psnr_scores.items():
+                    if scores:
+                        wandb.run.summary[f"mean_psnr_{name}"] = sum(scores) / len(
+                            scores
+                        )
+                for name, scores in ssim_scores.items():
+                    if scores:
+                        wandb.run.summary[f"mean_ssim_{name}"] = sum(scores) / len(
+                            scores
+                        )
+                for name, scores in kernel_errors.items():
+                    if scores:
+                        wandb.run.summary[f"mean_kernel_error_{name}"] = sum(
+                            scores
+                        ) / len(scores)
             wandb.finish()
