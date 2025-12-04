@@ -157,12 +157,11 @@ class BlindDeconvolver(nn.Module):
         # Initialize variables
         self.initialize_from_measurement(y_meas)
 
-        # Create separate optimizers for x and k (could also use a single optimizer)
-        params = [
-            {"params": [self.x_param], "lr": self.config.lr_x},
-            {"params": [self.k_param], "lr": self.config.lr_k},
-        ]
-        optimizer = optim.Adam(params)
+        # Create separate optimizers for staged training
+        opt_x = optim.Adam([self.x_param], lr=self.config.lr_x)
+        opt_k = optim.Adam([self.k_param], lr=self.config.lr_k)
+
+        freeze_k_iters = 50  # number of iterations where we only optimize the kernel
 
         losses: List[float] = []
 
@@ -174,7 +173,8 @@ class BlindDeconvolver(nn.Module):
         )
 
         for it in iterator:
-            optimizer.zero_grad()
+            opt_x.zero_grad()
+            opt_k.zero_grad()
 
             need_components = log_fn is not None
             result = map_objective(
@@ -198,7 +198,17 @@ class BlindDeconvolver(nn.Module):
                 loss_components = None
 
             loss.backward()
-            optimizer.step()
+
+            if it < freeze_k_iters:
+                # Only update kernel in the first phase
+                opt_k.step()
+                opt_k.zero_grad()
+            else:
+                # Update both x and k
+                opt_k.step()
+                opt_k.zero_grad()
+                opt_x.step()
+                opt_x.zero_grad()
 
             # Project constraints
             self.project_kernel()
